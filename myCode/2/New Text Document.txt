@@ -1,0 +1,722 @@
+"use strict"; // good practice - see https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Strict_mode
+
+// SET THE SCENE
+
+// SET PATH TO DIRECTORY ROOT
+var path = "";
+
+// SCENE ESSENTIALS
+var container,camera, scene, renderer, stats;
+var keyboard = new THREEx.KeyboardState();
+var cameraControls, effectController;
+
+// TIME
+var clock = new THREE.Clock();
+var newTime =0, oldTime =0;
+
+
+// ENVIRONMENT LIGHTING VARIABLES
+var cbCmr;
+var sunLght, skyLght;
+var skyBox, carEnv;
+
+// CAR STATE
+var crPos, motionFlag, rotateAngle;
+var u = 0,v =0, acoff = 0, accTime = 0;
+
+// SCENE OBJECTS
+var car, trrn, hs, grg, lmp;
+
+// OBJECT PARTS AND MATERIALS
+
+// CAR
+var crBdy   , crRmFL, crRmFR, crRmBL, crRmBR, crWdnPnl   , crSt   , crWhlFL, crWhlFR, crWhlBL, crWhlBR, crWndw   , crFrntLght   , crBckLght    ,crWndw   , crWndwStnd   , crBs   , crFlr   , crInsd   ; 
+var crBdyMtl, crRmMtl                       , crWdnPnlMtl, crStMtl, crWhlMtl                          , crWndwMtl, crFrntLghtMtl, crBckLghtMtl ,crWndwMtl, crWndwStndMtl, crBsMtl, crFlrMtl, crInsdMtl;
+// TERRAIN
+var trrnGrnd   , trrnRd   , trrnHsPth   , trrnGrgGrnd   , trrnDvdr   ;
+var trrnGrndMtl, trrnRdMtl, trrnHsPthMtl, trrnGrgGrndMtl, trrnDvdrMtl;
+// HOUSE
+var hsWll   , hsWndw   , hsWndwPn   , hsDr   , hsRf   ;
+var hsWllMtl, hsWndwMtl, hsWndwPnMtl, hsDrMtl, hsRfMtl;
+// GARAGE
+var grgWll   , grgDr   ;
+var grgWllMtl, grgDrMtl;
+// LAMP
+var lmpStnd   , lmpTrns   ;
+var lmpStndMtl, lmpTrnsMtl;
+init();
+animate();
+
+function init() 
+{
+	var canvasWidth = window.innerWidth;
+	var canvasHeight = window.innerHeight;
+	
+	
+	
+
+	// INITIALIZE CAR STATE
+	crPos = new THREE.Vector3( 0, 20.746, -24.291 );
+	
+	// CAMERA
+	camera = new THREE.PerspectiveCamera( 35, canvasWidth/ canvasHeight, 1, 40000 );
+	camera.position.set( 100, 60, -300 );
+	
+	// SKYBOX
+	var loader = new THREE.CubeTextureLoader()
+	loader.setPath(path + 'myCode/3/cubemap/');
+	skyBox = loader.load
+	([
+		'px.png','nx.png','py.png','ny.png','pz.png','nz.png'
+	]);
+				
+	// SCENE
+	scene = new THREE.Scene();
+	scene.background = skyBox;
+	scene.fog = new THREE.Fog( 0x0, 2000, 4000 );
+
+	// LIGHTS
+	sunLght = new THREE.DirectionalLight( 0xCCCCAA  );
+	sunLght.position.set( -6500, 3000, 6500 );
+	sunLght.castShadow = true;
+	sunLght.shadow.camera.right =  500000;
+	sunLght.shadow.camera.left = -500000;
+	sunLght.shadow.camera.top =  500000;
+	sunLght.shadow.camera.bottom = -500000;
+	sunLght.shadow.camera.near = 0.5;
+	sunLght.shadow.camera.far = 20000
+	var help = new THREE.CameraHelper( sunLght.shadow.camera )
+	sunLght.shadow.bias = 0.0001;
+	sunLght.shadow.mapSize.width = 512;
+	sunLght.shadow.mapSize.height = 512;
+	scene.add( sunLght );
+	scene.add(help);
+
+	// RENDERER
+	renderer = new THREE.WebGLRenderer( { antialias: true } );
+	renderer.gammaInput = true;
+	renderer.gammaOutput = true;
+	renderer.setSize(canvasWidth, canvasHeight);
+	renderer.clearColor;
+	renderer.shadowMap.enabled = true;
+	renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+	
+	// SETTING UP FPS COUNTER
+	addToDOM();
+	stats = new Stats();
+	stats.showPanel( 1 );
+	stats.domElement.style.position = 'absolute';
+	stats.domElement.style.top = '0px';
+	stats.domElement.style.zIndex = 100;
+	container.appendChild( stats.domElement );
+	setupGui();
+
+	// CONTROLS
+	cameraControls = new THREE.OrbitControls(camera, renderer.domElement);
+	cameraControls.target.copy(crPos);
+	
+	//CAR ENV
+	cbCmr = new THREE.CubeCamera( 1, 100000, 128 );
+	cbCmr.position.copy( crPos );
+	scene.add( cbCmr );
+	carEnv = cbCmr.renderTarget.texture;
+	
+	
+	createMaterials();
+	addLamp();
+	addBuildings();
+	addTerrain();
+	addCar();
+}
+
+function setupGui()
+{
+
+	effectController =
+	{
+		fps: 16.0
+	};
+
+	var gui = new dat.GUI();
+
+	var element = gui.add( effectController, "fps", 1.0, 60.0 ).step(1.0);
+	element.name("FPS");
+}
+
+function addToDOM()
+{
+	container = document.getElementById('container');
+	var canvas = container.getElementsByTagName('canvas');
+	if (canvas.length>0) {
+		container.removeChild(canvas[0]);
+	}
+	container.appendChild( renderer.domElement );
+}
+
+function createMaterials()
+{
+	// CAR
+	
+	// BODY
+
+	crBdyMtl = new THREE.MeshStandardMaterial( { metalness: 1.0, roughness: 0.5, envMap: skyBox } );
+	
+	// RIMS
+	crRmMtl = new THREE.MeshStandardMaterial({color: 0xDDDDDD, roughness: 0.6, metalness: 1});
+	
+	// WOODEN PANEL
+	var woodPnl = new THREE.TextureLoader().load('assets/textures/wd.jpg');
+	woodPnl.wrapS = THREE.RepeatWrapping;
+	woodPnl.wrapT = THREE.RepeatWrapping;
+	woodPnl.repeat.set(1,3);
+	crWdnPnlMtl = new THREE.MeshStandardMaterial({map: woodPnl, roughness: 0.1, metalness: 0.3});
+	
+	// HEAD LIGHTS
+	crFrntLghtMtl = new THREE.MeshLambertMaterial({emissive: 0xdedede});
+	
+	// TAIL LIGHTS
+	crBckLghtMtl = new THREE.MeshLambertMaterial({emissive: 0x551111});
+	
+	// SEATS
+	var seatLeather;
+	seatLeather = new THREE.TextureLoader().load( 'assets/textures/leather.jpg') ;
+	seatLeather.wrapS = THREE.RepeatWrapping;
+	seatLeather.wrapT = THREE.RepeatWrapping;
+	seatLeather.repeat.set(15,15);
+	crStMtl = new THREE.MeshStandardMaterial({map: seatLeather, roughness: 0.9, metalness: 0.1});
+	crStMtl.side = THREE.BackSide;
+	
+	// WHEELS
+	crWhlMtl = new THREE.MeshStandardMaterial({color: 0xDD3300, roughness: 0.05, metalness: 0});
+	
+	// WINDOW
+	crWndwMtl = new THREE.MeshPhongMaterial({color: 0x555555});
+	crWndwMtl.transparent = true;
+	crWndwMtl.opacity = 0.3;
+	
+	// WINDOW STAND
+	crWndwStndMtl = new THREE.MeshStandardMaterial({color: 0x000000, roughness: 0.9, metalness: 0});
+	
+	// BASE
+	crBsMtl = new THREE.MeshStandardMaterial({color: 0x000000, roughness: 0.9, metalness: 0});
+	
+	// FLOOR
+	crFlrMtl = new THREE.MeshStandardMaterial({color: 0xAAAA00, roughness: 0.9, metalness: 0});
+	
+	// INSIDE
+	crInsdMtl = new THREE.MeshStandardMaterial({color: 0xBBBB55, roughness: 0.9, metalness: 0});
+	
+	
+	//TERRAIN
+	
+	// GROUND
+	trrnGrndMtl = new THREE.MeshPhongMaterial({color: 0x117711});
+	
+	// ROAD
+	var roadTexture, roadAmbOcc, roadDisp, roadNorm ,roadSpec;
+	roadTexture = new THREE.TextureLoader().load( 'assets/textures/RdSmls.jpg') ;
+	roadTexture.wrapS = THREE.RepeatWrapping; 
+	roadTexture.wrapT = THREE.RepeatWrapping;
+
+	roadNorm = new THREE.TextureLoader().load( 'assets/textures/Asphalt_001_NRM.jpg') ;
+	roadNorm.wrapS = THREE.RepeatWrapping; 
+	roadNorm.wrapT = THREE.RepeatWrapping;
+	roadNorm.repeat.set( 10, 10 );
+
+	trrnRdMtl = new THREE.MeshStandardMaterial({map:roadTexture, metalness: 0.0, normalMap:roadNorm});
+	
+	// HOUSE PATH
+	trrnHsPthMtl = new THREE.MeshStandardMaterial({color: 0xDDDDAA, roughness: 0.9, metalness: 0})
+	
+	// DIVIDER
+	trrnDvdrMtl = new THREE.MeshStandardMaterial({color: 0xFFDDFF, roughness: 0.5, metalness: 0})
+	
+	
+	// HOUSE
+	
+	// ROOF
+	hsRfMtl = new THREE.MeshStandardMaterial({color: 0xDDCC00, roughness: 0.3, metalness: 0})
+	
+	// DOOR
+	hsDrMtl = new THREE.MeshStandardMaterial({color: 0x883300, roughness: 0.3, metalness: 0})
+	
+	// WINDOW
+	hsWndwMtl = new THREE.MeshStandardMaterial({color: 0x883300, roughness: 0.1, metalness: 0})
+	
+	// WINDOW PANE
+	hsWndwPnMtl = new THREE.MeshStandardMaterial({metalness:0.5, roughness:0.9});
+	
+	// WALLS
+	var hsWall = new THREE.TextureLoader().load('assets/textures/wall-hr_diffuse.jpg');
+	hsWall.wrapS = THREE.RepeatWrapping;
+	hsWall.wrapT = THREE.RepeatWrapping;
+	hsWall.repeat.set(5,5);
+	var hsWallN = new THREE.TextureLoader().load('assets/textures/wall-hr_normal.jpg');
+	hsWallN.wrapS = THREE.RepeatWrapping;
+	hsWallN.wrapT = THREE.RepeatWrapping;
+	hsWallN.repeat.set(5,5);
+	var hsWallD = new THREE.TextureLoader().load('assets/textures/wall-hr_displacement.jpg');
+	hsWallD.wrapS = THREE.RepeatWrapping;
+	hsWallD.wrapT = THREE.RepeatWrapping;
+	hsWallD.repeat.set(5,5);
+	var hsWallA = new THREE.TextureLoader().load('assets/textures/wall-hr_ambient occlusion.jpg');
+	hsWallA.wrapS = THREE.RepeatWrapping;
+	hsWallA.wrapT = THREE.RepeatWrapping;
+	hsWallA.repeat.set(5,5);
+	var hsWallS = new THREE.TextureLoader().load('assets/textures/wall-hr_specular.jpg');
+	hsWallS.wrapS = THREE.RepeatWrapping;
+	hsWallS.wrapT = THREE.RepeatWrapping;
+	hsWallS.repeat.set(5,5);
+	hsWllMtl = new THREE.MeshPhongMaterial({map: hsWall, normalMap: hsWallN, aoMap: hsWallA, specularMap: hsWallS, specular: 0xcccccc});
+	
+	
+	// GARAGE
+	
+	// DOOR
+	grgDrMtl = new THREE.MeshStandardMaterial({color: 0xDDDDDD, roughness: 0.6, metalness: 1});
+	
+	// WALLS
+	var grgWall = new THREE.TextureLoader().load('assets/textures/concrete-wallRGB.jpg');
+	grgWall.wrapS = THREE.RepeatWrapping;
+	grgWall.wrapT = THREE.RepeatWrapping;
+	grgWall.repeat.set(5,5);
+	var grgWallN = new THREE.TextureLoader().load('assets/textures/concrete-wallN.jpg');
+	grgWallN.wrapS = THREE.RepeatWrapping;
+	grgWallN.wrapT = THREE.RepeatWrapping;
+	grgWallN.repeat.set(5,5);
+	grgWllMtl = new THREE.MeshStandardMaterial({map:grgWall, roughness: 0.8, metalness: 0});
+	
+	
+	// LAMP
+	
+	// STAND
+	lmpStndMtl = new THREE.MeshStandardMaterial({color: 0x884400, roughness: 0.1, metalness: 0})
+	
+	// TRANSPARENT
+	lmpTrnsMtl = new THREE.MeshStandardMaterial({color: 0x111111, roughness: 0.3, metalness: 0.3})
+}
+
+function addCar()
+{
+	var loader = new THREE.JSONLoader();
+	
+	// CAR
+	car = new THREE.Group();
+	
+	// BODY
+	loader.load( 'assets/OBJs/crBdy.js', function ( geometry ) 
+	{
+        crBdy = new THREE.Mesh( geometry, crBdyMtl );
+		car.add( crBdy );
+	});
+	
+	// LEFT WHEELS
+	loader.load( 'assets/OBJs/crWhl.js', function ( geometry ) 
+	{
+        crWhlFL = new THREE.Mesh( geometry, crWhlMtl );
+		crWhlFL.position.x = 35.0;
+        crWhlFL.position.y = -9.572;
+        crWhlFL.position.z = 29.027;
+		car.add( crWhlFL );
+		
+		crWhlBL = new THREE.Mesh( geometry, crWhlMtl );
+		crWhlBL.position.x = 35.0;
+        crWhlBL.position.y = -9.572;
+        crWhlBL.position.z = -29.148;
+		car.add( crWhlBL );
+	});
+	
+	// RIGHT WHEELS
+	loader.load( 'assets/OBJs/crWhl.js', function ( geometry ) 
+	{
+        crWhlFR = new THREE.Mesh( geometry, crWhlMtl );
+		crWhlFR.position.x = -35.0;
+        crWhlFR.position.y = -9.572;
+        crWhlFR.position.z = 29.027;
+		car.add( crWhlFR );
+		
+		crWhlBR = new THREE.Mesh( geometry, crWhlMtl );
+		crWhlBR.position.x = -35.0;
+        crWhlBR.position.y = -9.572;
+        crWhlBR.position.z = -29.148;
+		car.add( crWhlBR );
+	});
+	
+	// LEFT RIMS
+	loader.load( 'assets/OBJs/crRmL.js', function ( geometry ) 
+	{			
+        crRmFL = new THREE.Mesh( geometry, crRmMtl );
+		crRmFL.position.x = 38.0;
+        crRmFL.position.y = -9.572;
+        crRmFL.position.z = 29.027;
+		car.add( crRmFL );
+		
+		crRmBL = new THREE.Mesh( geometry, crRmMtl );
+		crRmBL.position.x = 38.0;
+        crRmBL.position.y = -9.572;
+        crRmBL.position.z = -29.148;
+		car.add( crRmBL );
+	});
+	
+	// RIGHT RIMS
+	loader.load( 'assets/OBJs/crRmR.js', function ( geometry ) 
+	{		
+        crRmFR = new THREE.Mesh( geometry, crRmMtl );
+		crRmFR.position.x = -38.0;
+        crRmFR.position.y = -9.572;
+        crRmFR.position.z = 29.027;
+		car.add( crRmFR );
+		
+		crRmBR = new THREE.Mesh( geometry, crRmMtl );
+		crRmBR.position.x = -38.0;
+        crRmBR.position.y = -9.572;
+        crRmBR.position.z = -29.148;
+		car.add( crRmBR );
+	});
+	
+	// SEATS
+	loader.load( 'assets/OBJs/crSt.js', function ( geometry ) 
+	{
+        crSt = new THREE.Mesh( geometry, crStMtl );
+		car.add( crSt );
+	});
+	
+	// HEAD LIGHTS
+	loader.load( 'assets/OBJs/crFrntLght.js', function ( geometry ) 
+	{
+        crFrntLght = new THREE.Mesh( geometry, crFrntLghtMtl );  
+		car.add( crFrntLght );
+	});
+	
+	// TAIL LIGHTS
+	loader.load( 'assets/OBJs/crBckLght.js', function ( geometry ) 
+	{
+        crBckLght = new THREE.Mesh( geometry, crBckLghtMtl );  
+		car.add( crBckLght );
+	});
+	
+	// BASE
+	loader.load( 'assets/OBJs/crBs.js', function ( geometry ) 
+	{
+        crBs = new THREE.Mesh( geometry, crBsMtl );  
+		car.add( crBs );
+	});
+	
+	// WOODEN PANEL
+	loader.load( 'assets/OBJs/crWdnPnl.js', function ( geometry ) 
+	{
+        crWdnPnl = new THREE.Mesh( geometry, crWdnPnlMtl );
+		car.add( crWdnPnl );
+	});
+	
+	// WINDOW
+	loader.load( 'assets/OBJs/crWndw.js', function ( geometry ) 
+	{
+        crWndw = new THREE.Mesh( geometry, crWndwMtl );       
+		car.add( crWndw );
+	});
+	
+	// WINDOW STAND
+	loader.load( 'assets/OBJs/crWndwStnd.js', function ( geometry ) 
+	{
+        crWndwStnd = new THREE.Mesh( geometry, crWndwStndMtl );
+		car.add( crWndwStnd );
+	});
+	
+	// INSIDE
+	loader.load( 'assets/OBJs/crInsd.js', function ( geometry ) 
+	{
+        crInsd = new THREE.Mesh( geometry, crInsdMtl );
+		car.add( crInsd );
+	});
+	
+	// FLOOR
+	loader.load( 'assets/OBJs/crFlr.js', function ( geometry ) 
+	{
+        crFlr = new THREE.Mesh( geometry, crFlrMtl );
+		car.add( crFlr );
+	});
+	
+	car.position.copy( crPos );
+	car.traverse
+	( 
+		function(child) 
+		{
+			if (child instanceof THREE.Mesh) 
+			{
+				child.castShadow = true;
+				child.receiveShadow = true;
+			}
+		}
+	);
+	scene.add( car );
+}
+function addLamp()
+{
+	var loader = new THREE.JSONLoader();
+	
+	// LAMP
+	lmp = new THREE.Group();
+	
+	// STAND
+	loader.load( 'assets/OBJs/lmpStnd.js', function ( geometry ) 
+	{
+        lmpStnd = new THREE.Mesh( geometry, lmpStndMtl );
+		lmp.add( lmpStnd );
+	});
+	
+	// TRANSPARENT
+	loader.load( 'assets/OBJs/lmpTrns.js', function ( geometry ) 
+	{
+        lmpTrns = new THREE.Mesh( geometry, lmpTrnsMtl );
+		lmp.add( lmpTrns );
+	});
+	lmp.traverse
+	( 
+		function(child) 
+		{
+			if (child instanceof THREE.Mesh) 
+			{
+				child.castShadow = true;
+				child.receiveShadow = true;
+			}
+		}
+	);
+	scene.add( lmp );
+}
+
+function addTerrain()
+{
+	var loader = new THREE.JSONLoader();
+	
+	// TERRAIN
+	trrn = new THREE.Group();
+	
+	// GROUND
+	loader.load( 'assets/OBJs/trrnGrnd.js', function ( geometry ) 
+	{
+        trrnGrnd = new THREE.Mesh( geometry, trrnGrndMtl );
+		trrn.add( trrnGrnd );
+	});
+	
+	// ROAD
+	loader.load( 'assets/OBJs/trrnRd.js', function ( geometry ) 
+	{
+        trrnRd = new THREE.Mesh( geometry, trrnRdMtl );
+		trrn.add( trrnRd );
+	});
+	
+	// HOUSE PATH
+	loader.load( 'assets/OBJs/trrnHsPth.js', function ( geometry ) 
+	{
+        trrnHsPth = new THREE.Mesh( geometry, trrnHsPthMtl );
+		trrn.add( trrnHsPth );
+	});
+	
+	// GARAGE GROUND
+	loader.load( 'assets/OBJs/trrnGrgGrnd.js', function ( geometry ) 
+	{
+        trrnGrgGrnd = new THREE.Mesh( geometry, trrnGrgGrndMtl );
+		trrn.add( trrnGrgGrnd );
+	});
+	
+	//DIVIDER
+	loader.load( 'assets/OBJs/trrnDvdr.js', function ( geometry ) 
+	{
+        trrnDvdr = new THREE.Mesh( geometry, trrnDvdrMtl );
+		trrn.add( trrnDvdr );
+	});
+	trrn.traverse
+	( 
+		function(child) 
+		{
+			if (child instanceof THREE.Mesh) 
+			{
+				child.receiveShadow = true;
+			}
+		}
+	);
+	scene.add( trrn );
+}
+
+function addBuildings()
+{
+	var loader = new THREE.JSONLoader();
+	
+	//HOUSE
+	hs = new THREE.Group();
+	
+	//Roof
+	loader.load( 'assets/OBJs/hsRf.js', function ( geometry ) 
+	{
+        hsRf = new THREE.Mesh( geometry, hsRfMtl );
+		hsRf.position.x = -238.105;
+		hsRf.position.y = 143.682;
+		hsRf.position.z = -205.213;
+		hs.add( hsRf );
+	});
+	
+	//Door
+	loader.load( 'assets/OBJs/hsDr.js', function ( geometry ) 
+	{
+        hsDr = new THREE.Mesh( geometry, hsDrMtl );
+		hs.add( hsDr );
+	});
+	
+	//Window
+	loader.load( 'assets/OBJs/hsWndw.js', function ( geometry ) 
+	{
+        hsWndw = new THREE.Mesh( geometry, hsWndwMtl );
+		hsWndw.position.x = -311.316;
+		hsWndw.position.y = 55.556;
+		hsWndw.position.z = -75.046;
+		hs.add( hsWndw );
+	});
+	
+	// WINDOW PANE
+	loader.load( 'assets/OBJs/hsWndwPn.js', function ( geometry ) 
+	{
+        hsWndwPn = new THREE.Mesh( geometry, hsWndwPnMtl );
+		hsWndwPn.position.x = -311.316;
+		hsWndwPn.position.y = 55.556;
+		hsWndwPn.position.z = -75.308;
+		hs.add( hsWndwPn );
+	});
+	
+	// WALL
+	loader.load( 'assets/OBJs/hsWll.js', function ( geometry ) 
+	{
+        hsWll = new THREE.Mesh( geometry, hsWllMtl );
+		hs.add( hsWll );
+	});
+	hs.traverse
+	(
+		function(child)
+		{
+			if (child instanceof THREE.Mesh) 
+			{
+				child.castShadow = true;
+				child.receiveShadow = true;
+			}
+		}
+	);
+	scene.add( hs );
+	
+	// GARAGE
+	grg = new THREE.Object3D();
+
+	// DOOR
+	loader.load( 'assets/OBJs/grgDr.js', function ( geometry ) 
+	{
+        grgDr = new THREE.Mesh( geometry, grgDrMtl );
+		grg.add( grgDr );
+	});
+	
+	// WALL
+	loader.load( 'assets/OBJs/grgWll.js', function ( geometry ) 
+	{
+        grgWll = new THREE.Mesh( geometry, grgWllMtl );
+		grg.add( grgWll );
+	});
+	grg.traverse
+	( 
+		function(child) 
+		{
+		if (child instanceof THREE.Mesh)
+		{
+			child.castShadow = true;
+			child.receiveShadow = true;
+		}
+	});
+	scene.add( grg );
+	
+}
+
+function animate() 
+{
+	requestAnimationFrame(animate);
+	render();
+	
+	update();
+}
+
+function render() 
+{
+	
+	var delta = clock.getDelta();
+	cameraControls.update(delta);
+	newTime += delta;
+
+	// fudge factor: 0.95 correlates closer to true frame rate numbers;
+	// basically, there's some friction as far as timing goes, and this adjusts for it.
+	var frameTime = 0.95/effectController.fps;
+	if ( effectController.fps > 59.9 )
+	{
+		// At 60 FPS, simply go as fast as possible;
+		// Not doing so can force a frame time that is less than 60 FPS.
+		frameTime = 0;
+	}
+	if ( newTime > oldTime + frameTime )
+	{
+		cbCmr.position.copy(car.position);
+		car.visible = false;
+		cbCmr.update(renderer,scene);
+		crBdyMtl.envMap = cbCmr.renderTarget.texture;
+		renderer.clear();
+		car.visible = true;
+		oldTime = newTime;
+		stats.update();
+		renderer.render( scene, camera );
+	}
+}
+
+function update()
+{
+	u = v;
+	var dt = clock.getDelta(); // seconds.
+	var ds = u * dt; // 200 pixels per second
+	rotateAngle = Math.PI / 2 * dt;
+	if(accTime > 20)
+	{
+		accTime = 20;
+	}
+	var accFctr = (Math.sin((accTime/20 - 0.396) / 0.384 ) * 0.5 + 0.5 )
+	if ( keyboard.pressed("W") )// Forward Accelerate
+	{
+		if(u>=0)
+		accTime = accTime + dt;
+		if( keyboard.pressed("A") )//
+		{
+			car.rotateOnAxis( new THREE.Vector3(0,1,0), rotateAngle);
+		}
+		else if( keyboard.pressed("D") )
+		{
+			rotateAngle = -rotateAngle;
+			car.rotateOnAxis( new THREE.Vector3(0,1,0), rotateAngle);
+		}
+		var dv = 1500*accFctr;
+		v = Math.min(1500, u+dv);
+		ds = dt*(v+u)/2;
+		
+	}
+	//else if ( keyboard.pressed("S") )// Backward Accelerate
+	else
+	{
+		accTime = 0;
+		u = u*accFctr;
+		if(u<1);
+			u=0;
+		ds = u*dt;
+		if ( keyboard.pressed("A") )// Wheels Left
+		{
+			car.rotateOnAxis( new THREE.Vector3(0,1,0), rotateAngle);
+		}
+		else if ( keyboard.pressed("D") )// Wheels Right
+		{
+			rotateAngle = -rotateAngle;
+			car.rotateOnAxis( new THREE.Vector3(0,1,0), rotateAngle);
+		}
+		v = u;
+	}
+	car.translateZ( ds );
+}
